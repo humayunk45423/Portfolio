@@ -1946,7 +1946,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Developer Console Welcome Message
 console.log(
-    "%c Humayoun Kobir %c Engineer & Designer Portfolio \n%c⚡ Welcome! Looking under the hood? Check out the full source code on GitHub:\n👉 https://github.com/humayunk45423/Webpage-2",
+    "%c Humayoun Kobir %c Engineer & Designer Portfolio \n%c⚡ Welcome! Looking under the hood? Check out the full source code on GitHub:\n👉 https://github.com/humayunk45423/Portfolio",
     "background: #165844; color: #ffffff; padding: 4px 8px; border-radius: 4px 0 0 4px; font-weight: bold; font-family: sans-serif;",
     "background: #ff6b00; color: #000000; padding: 4px 8px; border-radius: 0 4px 4px 0; font-weight: bold; font-family: sans-serif;",
     "color: #888888; font-size: 11px; margin-top: 6px; font-family: sans-serif;"

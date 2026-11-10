@@ -227,32 +227,26 @@ flowchart LR
 ## Project Structure
 
 ```
-Webpage-2/
-├── assets/                     # Downloadable utilities, scripts, icons & media
-│   ├── site-images/            # WebP graphics, brand banners & animated logo
-│   ├── Autoruns/               # Sysinternals Autoruns archive
-│   ├── Avro/                   # Avro keyboard setup
-│   ├── CrystalDiskInfo/        # CDI health monitoring archive
-│   ├── CrystalDiskMark/        # CDM benchmark archive
-│   ├── Glary Utility/          # Glary Utilities installer
-│   ├── Good Bye DPI/           # GoodByeDPI utility
-│   ├── HitmanPro_.../          # HitmanPro scanner archive
-│   ├── ProcessExplorer/        # Process Explorer archive
-│   ├── Revo Uninstaller.../    # Revo Uninstaller Pro archive
-│   ├── Winrar/                 # WinRAR activation key package
-│   ├── cru-1.5.3/              # Custom Resolution Utility
-│   └── ...                     # Additional scripts, runtimes & tools
+Portfolio/
+├── 6f9c2a4e8b1d47a09c3e5f1b7d2a804c.txt  # IndexNow verification key (Bing & Yandex)
+├── 404.html                    # Custom branded 404 page (noindex, follow)
+├── assets/                     # Media, logos & site metadata
+│   ├── site-images/            # WebP graphics, brand banners & vector monogram
 ├── BingSiteAuth.xml            # Bing Webmaster verification
+├── files.css                   # Software HQ explorer styling
 ├── files.html                  # Software HQ interactive utility explorer
+├── files.js                    # Software HQ catalog, search & bilingual docs
 ├── google066fec538eede997.html # Google Search Console verification
 ├── index.html                  # Main portfolio homepage
+├── llms.txt                    # AI / LLM knowledge index
 ├── README.md                   # Repository documentation
-├── robots.txt                  # Search crawler directives
-├── script.js                   # Navigation glider, theme switcher, typing animation
-├── site.webmanifest            # Web manifest configuration
+├── robots.txt                  # Crawler directives & Yandex Clean-param rules
+├── script.js                   # SPA router, glider nav, theme/lang, lightbox
+├── site.webmanifest            # PWA web manifest configuration
 ├── sitemap.xml                 # XML Sitemap for search engines
 ├── style.css                   # Global styling, tokens, themes & layout rules
-└── vercel.json                 # Vercel deployment headers and cache rules
+├── sw.js                       # Offline PWA service worker
+└── vercel.json                 # Vercel cleanUrls, edge headers & cache rules
 ```
 
 ---
@@ -266,10 +260,10 @@ Clone the repository and open `index.html` with any local HTTP server:
 
 ```bash
 # Clone repository
-git clone https://github.com/humayunk45423/Webpage-2.git
+git clone https://github.com/humayunk45423/Portfolio.git
 
 # Serve using Python 3
-cd Webpage-2
+cd Portfolio
 python -m http.server 8080
 ```
 
@@ -282,6 +276,7 @@ Open `http://localhost:8080` in your web browser.
 - **Email**: [humayunk45423@gmail.com](mailto:humayunk45423@gmail.com)
 - **WhatsApp**: [+8801721445207](https://wa.me/8801721445207)
 - **GitHub**: [github.com/humayunk45423](https://github.com/humayunk45423)
+- **Repository**: [github.com/humayunk45423/Portfolio](https://github.com/humayunk45423/Portfolio)
 - **LinkedIn**: [linkedin.com/in/humayounkobir](https://www.linkedin.com/in/humayounkobir/)
 - **Behance**: [behance.net/humayunk45423](https://www.behance.net/humayunk45423)
 - **Dribbble**: [dribbble.com/humayunk45423](https://dribbble.com/humayunk45423)

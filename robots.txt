@@ -1,11 +1,25 @@
 User-agent: *
 Allow: /
 
-# Dedicated search crawler permissions
+# Major Search Engines
 User-agent: Googlebot
 Allow: /
 
+User-agent: Googlebot-Image
+Allow: /
+
 User-agent: Bingbot
+Allow: /
+
+User-agent: Yandex
+Allow: /
+Clean-param: perf&utm_source&utm_medium&utm_campaign&utm_term&utm_content&fbclid&gclid&yclid /
+
+User-agent: YandexBot
+Allow: /
+Clean-param: perf&utm_source&utm_medium&utm_campaign&utm_term&utm_content&fbclid&gclid&yclid /
+
+User-agent: YandexImages
 Allow: /
 
 User-agent: DuckDuckBot
@@ -23,10 +37,23 @@ Allow: /
 User-agent: Slurp
 Allow: /
 
-User-agent: YandexBot
+User-agent: Baiduspider
 Allow: /
 
-User-agent: Baiduspider
+User-agent: Applebot
+Allow: /
+
+# AI Search & Answer Engines
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
 Allow: /
 
 # XML Sitemap
