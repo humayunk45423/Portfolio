@@ -921,7 +921,6 @@ if ('scrollRestoration' in history) {
 const mainLayout = document.getElementById('mainLayout');
 const explorerView = document.getElementById('explorerView');
 const detailView = document.getElementById('detailView');
-const fileGrid = document.getElementById('fileGrid');
 const detailContent = document.getElementById('detailContent');
 const fileSearch = document.getElementById('fileSearch');
 const searchKbd = document.getElementById('searchKbd');
@@ -1420,9 +1419,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const themeToggle = document.getElementById('themeToggle');
     const themeToggleMobile = document.getElementById('themeToggleMobile');
     const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-    const closeMenuBtn = document.getElementById('closeMenuBtn');
-    const mobileDrawer = document.getElementById('mobileDrawer');
-    const drawerBackdrop = document.getElementById('drawerBackdrop');
 
     // Top Nav Selection Pill (Glider) Positioning
     const glider = document.getElementById('navGlider');
