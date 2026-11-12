@@ -1421,33 +1421,57 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Top Nav Selection Pill (Glider) Positioning
     const glider = document.getElementById('navGlider');
+    const navEl = document.querySelector('.nav');
     let gliderInitialized = false;
+    let lastGliderLeft = -1;
+    let lastGliderWidth = -1;
+    let lastGliderTarget = null;
 
     const syncGlider = (immediate = false) => {
         if (window.__portfolioScriptLoaded) return;
-        if (!glider || window.innerWidth < 1024) return;
+        if (!glider || !navEl || window.innerWidth <= 1024) return;
         const activeTab = document.querySelector('.nav a.active') || document.getElementById('navSoftwareHq');
-        if (activeTab) {
-            const left = Math.round(activeTab.offsetLeft);
-            const width = Math.round(activeTab.offsetWidth);
-            if (width <= 0) return;
-            glider.style.removeProperty('opacity');
+        if (!activeTab) return;
+
+        const navRect = navEl.getBoundingClientRect();
+        const tabRect = activeTab.getBoundingClientRect();
+        const left = Number((tabRect.left - navRect.left).toFixed(2));
+        const width = Number(tabRect.width.toFixed(2));
+        if (width <= 0 || navRect.width <= 0) return;
+
+        if (
+            gliderInitialized &&
+            lastGliderTarget === activeTab &&
+            Math.abs(left - lastGliderLeft) < 0.1 &&
+            Math.abs(width - lastGliderWidth) < 0.1
+        ) {
+            navEl.classList.add('glider-ready');
             glider.classList.add('visible');
-            if (immediate || !gliderInitialized) {
-                glider.style.transition = 'none';
-                glider.style.transform = `translate3d(${left}px, 0, 0)`;
-                glider.style.width = `${width}px`;
-                gliderInitialized = true;
-                requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                        if (glider) glider.style.transition = '';
-                    });
-                });
-                return;
-            }
+            return;
+        }
+
+        const shouldSnap = immediate || !gliderInitialized;
+        lastGliderLeft = left;
+        lastGliderWidth = width;
+        lastGliderTarget = activeTab;
+
+        glider.style.removeProperty('opacity');
+        if (shouldSnap) {
+            navEl.classList.add('glider-instant', 'glider-ready');
+            glider.classList.add('visible');
             glider.style.transform = `translate3d(${left}px, 0, 0)`;
             glider.style.width = `${width}px`;
+            gliderInitialized = true;
+            void glider.offsetWidth;
+            navEl.classList.remove('glider-instant');
+            return;
         }
+
+        navEl.classList.add('glider-ready');
+        glider.classList.add('visible');
+        glider.style.transform = `translate3d(${left}px, 0, 0)`;
+        glider.style.width = `${width}px`;
+        gliderInitialized = true;
     };
 
     const updateLangToggleUi = (lang) => {
@@ -1468,7 +1492,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    const applyLanguage = (lang) => {
+    const applyLanguage = (lang, immediate = false) => {
         root.setAttribute('data-lang', lang);
         root.setAttribute('lang', lang);
         localStorage.setItem('portfolio-lang', lang);
@@ -1508,14 +1532,9 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSearchPlaceholder();
         renderExplorer();
 
-        // Immediately update top navigation glider with new tab widths
+        // Update top navigation glider cleanly in standalone mode
         if (!window.__portfolioScriptLoaded) {
-            syncGlider();
-            requestAnimationFrame(() => {
-                syncGlider();
-                requestAnimationFrame(syncGlider);
-            });
-            setTimeout(syncGlider, 60);
+            syncGlider(immediate);
         }
 
         if (detailView && detailView.classList.contains('active')) {
@@ -1543,7 +1562,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ]);
             } catch (e) {}
         }
-        applyLanguage(newLang);
+        applyLanguage(newLang, false);
     };
 
     if (!window.__portfolioScriptLoaded) {
@@ -1670,7 +1689,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const initialLang = root.getAttribute('data-lang') || localStorage.getItem('portfolio-lang') || 'en';
-    applyLanguage(initialLang);
+    applyLanguage(initialLang, true);
     window.addEventListener('resize', updateSearchPlaceholder);
 
     // Detect macOS to display ⌘ K instead of Ctrl K
@@ -1792,11 +1811,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!window.__portfolioScriptLoaded) {
         // Top Nav Selection Pill (Glider) Initial Positioning
         syncGlider(true);
+        if (typeof ResizeObserver !== 'undefined' && navEl) {
+            const navResizeObserver = new ResizeObserver(() => syncGlider(true));
+            navResizeObserver.observe(navEl);
+            document.querySelectorAll('.nav a:not(.glider)').forEach(link => navResizeObserver.observe(link));
+        }
         if (document.fonts && document.fonts.ready) {
             document.fonts.ready.then(() => syncGlider(true));
         }
         window.addEventListener('load', () => syncGlider(true));
-        window.addEventListener('resize', () => syncGlider(false), { passive: true });
+        window.addEventListener('loader:done', () => syncGlider(true), { once: true });
+        window.addEventListener('resize', () => syncGlider(true), { passive: true });
+        window.addEventListener('pageshow', (event) => {
+            if (event.persisted) syncGlider(true);
+        });
     }
 
     // Smooth Page Exit Slide When Clicking Back to Main Tabs (Standalone Fallback Only)
@@ -1804,12 +1832,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.nav a[href^="index.html"], .nav a[href^="/#"], .nav a[href^="#"]').forEach(link => {
             link.addEventListener('click', (e) => {
                 const targetHref = link.getAttribute('href');
-                document.querySelectorAll('.nav a').forEach(l => l.classList.remove('active'));
-                link.classList.add('active');
-                if (glider && window.innerWidth >= 1024) {
-                    glider.style.transform = `translate3d(${Math.round(link.offsetLeft)}px, 0, 0)`;
-                    glider.style.width = `${Math.round(link.offsetWidth)}px`;
-                }
+                document.querySelectorAll('.nav a').forEach(l => l.classList.toggle('active', l === link));
+                syncGlider(false);
                 sessionStorage.setItem('page-transition-dir', 'to-index');
                 if ('startViewTransition' in document) {
                     return;
@@ -2016,7 +2040,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (pm) {
                     pm.classList.remove('page-exit-left', 'page-exit-right', 'page-slide-in-left', 'page-slide-in-right');
                 }
-                if (typeof syncGlider === 'function') syncGlider(false);
             }
         });
     })();

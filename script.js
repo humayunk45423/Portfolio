@@ -451,7 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let updateGliderSync = () => {};
     let refreshMetrics = () => {};
 
-    const applyLanguage = (lang) => {
+    const applyLanguage = (lang, immediate = false, skipGliderSync = false) => {
         activeLang = lang;
         root.setAttribute('data-lang', lang);
         root.setAttribute('lang', lang);
@@ -493,28 +493,13 @@ document.addEventListener('DOMContentLoaded', () => {
         charIndex = 0;
         isDeleting = false;
 
-        // Recompute navigation glider dimensions immediately to accommodate new text length
-        if (typeof computePositions === 'function') computePositions();
+        // Recompute navigation glider dimensions cleanly without overlapping transition collisions
+        computePositions();
         refreshMetrics();
-        syncActiveGlider();
-        updateGliderSync();
-
-        requestAnimationFrame(() => {
-            if (typeof computePositions === 'function') computePositions();
-            refreshMetrics();
-            syncActiveGlider();
-            updateGliderSync();
-            requestAnimationFrame(() => {
-                refreshMetrics();
-                syncActiveGlider();
-                updateGliderSync();
-            });
-        });
-        setTimeout(() => {
-            refreshMetrics();
-            syncActiveGlider();
-            updateGliderSync();
-        }, 60);
+        if (!skipGliderSync) {
+            syncActiveGlider(immediate);
+            updateGliderSync(false, immediate);
+        }
     };
 
     const toggleLanguage = async () => {
@@ -530,7 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ]);
             } catch (e) {}
         }
-        applyLanguage(newLang);
+        applyLanguage(newLang, false);
     };
 
     [langToggle, langToggleMobile].forEach(btn => {
@@ -551,9 +536,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const mobileNavContent = document.getElementById('mobileNavContent');
 
     let isMenuOpen = false;
+    let syncMobileDrawerState = () => {};
 
     const openMenu = () => {
         if (isMenuOpen || !navWrap) return;
+        syncMobileDrawerState();
         isMenuOpen = true;
         navWrap.classList.add('menu-open');
 
@@ -732,7 +719,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateLoop = () => {
         let needsUpdate = false;
         const sy = state.scrollY;
-        if (state.winW >= 1024) {
+        if (state.winW > 1024) {
             if (typeof updateGliderSync === "function") updateGliderSync();
         }
 
@@ -754,12 +741,15 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('resize', () => {
         computePositions();
         refreshMetrics();
-        updateGliderSync();
+        if (window.innerWidth > 1024) {
+            syncActiveGlider(true);
+            updateGliderSync(false, true);
+        }
     }, { passive: true });
 
     window.addEventListener('scroll', () => {
         state.scrollY = window.scrollY || window.pageYOffset || 0;
-        if (window.innerWidth >= 1024) {
+        if (window.innerWidth > 1024) {
             startLoop();
         }
     }, { passive: true });
@@ -780,6 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // =========================================================================
     // 7. Ultra-Fluid Dual-View SPA Router & Persistent Glider Engine
     // =========================================================================
+    const navEl = document.querySelector('.nav');
     const navLinks = Array.from(document.querySelectorAll('.nav a:not(.glider)'));
     const portfolioLinks = Array.from(document.querySelectorAll('.nav a[href^="#"]'));
     const sections = portfolioLinks.map(link => document.querySelector(link.getAttribute('href'))).filter(s => s);
@@ -787,80 +778,199 @@ document.addEventListener('DOMContentLoaded', () => {
     const softwareHqLink = document.getElementById('navSoftwareHq') || document.querySelector('.nav a[href*="files"]');
     const portfolioView = document.getElementById('portfolioView');
     const softwareHqView = document.getElementById('softwareHqView');
-    const mobileSoftwareHqLink = document.getElementById('mobileNavSoftwareHq');
 
     let isNavigating = false;
     let isSoftwareHqActive = false;
     let lastGliderIdx = -1;
+    let gliderInitialized = false;
+    let lastGliderLeft = -1;
+    let lastGliderWidth = -1;
+    let lastGliderTarget = null;
+    let hasHydratedPortfolioReveals = false;
+
+    let navLockToken = 0;
+    let navUnlockTimer = null;
+    let navUnlockScrollEndHandler = null;
+    let navInterruptHandler = null;
 
     let cachedNavMetrics = new Map();
     let cachedSectionMetrics = [];
 
+    const getNavScrollMargin = (sec) => {
+        if (!sec) return 96;
+        const parsed = parseFloat(getComputedStyle(sec).scrollMarginTop);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 96;
+    };
+
+    const measureNavLink = (link) => {
+        if (!navEl || !link) return null;
+        const navRect = navEl.getBoundingClientRect();
+        const linkRect = link.getBoundingClientRect();
+        if (linkRect.width <= 0 || navRect.width <= 0) return null;
+        return {
+            left: Number((linkRect.left - navRect.left).toFixed(2)),
+            width: Number(linkRect.width.toFixed(2))
+        };
+    };
+
+    const clearNavScrollLock = () => {
+        if (navUnlockTimer) {
+            clearTimeout(navUnlockTimer);
+            navUnlockTimer = null;
+        }
+        if (navUnlockScrollEndHandler) {
+            window.removeEventListener('scrollend', navUnlockScrollEndHandler);
+            navUnlockScrollEndHandler = null;
+        }
+        if (navInterruptHandler) {
+            window.removeEventListener('wheel', navInterruptHandler);
+            window.removeEventListener('touchstart', navInterruptHandler);
+            navInterruptHandler = null;
+        }
+    };
+
+    const beginNavScrollLock = (targetIdx, targetTop = null) => {
+        const token = ++navLockToken;
+        clearNavScrollLock();
+        isNavigating = true;
+        if (typeof targetIdx === 'number' && targetIdx >= 0) {
+            lastGliderIdx = targetIdx;
+        }
+
+        const finishLock = () => {
+            if (token !== navLockToken) return;
+            clearNavScrollLock();
+            isNavigating = false;
+            state.scrollY = window.scrollY || window.pageYOffset || 0;
+            if (!isSoftwareHqActive) {
+                updateGliderSync(true, false);
+            }
+        };
+
+        navInterruptHandler = (ev) => {
+            if (token !== navLockToken) return;
+            if (ev && ev.target && navWrap && navWrap.contains(ev.target)) return;
+            clearNavScrollLock();
+            isNavigating = false;
+            state.scrollY = window.scrollY || window.pageYOffset || 0;
+            if (window.innerWidth > 1024) startLoop();
+        };
+
+        requestAnimationFrame(() => {
+            if (token !== navLockToken) return;
+            window.addEventListener('wheel', navInterruptHandler, { passive: true, once: true });
+            window.addEventListener('touchstart', navInterruptHandler, { passive: true, once: true });
+        });
+
+        if ('onscrollend' in window) {
+            navUnlockScrollEndHandler = finishLock;
+            window.addEventListener('scrollend', navUnlockScrollEndHandler, { once: true });
+        }
+
+        const currentY = window.scrollY || window.pageYOffset || 0;
+        const alreadyAtTarget = targetTop !== null && Math.abs(currentY - targetTop) < 3;
+        const fallbackMs = alreadyAtTarget ? 320 : ('onscrollend' in window ? 1400 : 950);
+        navUnlockTimer = setTimeout(finishLock, fallbackMs);
+    };
+
     refreshMetrics = () => {
-        const scrollMargin = 72;
-        navLinks.forEach(link => {
-            if (link.offsetWidth > 0) {
-                cachedNavMetrics.set(link, {
-                    left: link.offsetLeft,
-                    width: link.offsetWidth
+        if (navEl && window.innerWidth > 1024) {
+            const navRect = navEl.getBoundingClientRect();
+            if (navRect.width > 0) {
+                navLinks.forEach(link => {
+                    const linkRect = link.getBoundingClientRect();
+                    if (linkRect.width > 0) {
+                        cachedNavMetrics.set(link, {
+                            left: Number((linkRect.left - navRect.left).toFixed(2)),
+                            width: Number(linkRect.width.toFixed(2))
+                        });
+                    }
                 });
             }
+        }
+        cachedSectionMetrics = sections.map((section, idx) => {
+            const margin = getNavScrollMargin(section);
+            return {
+                margin,
+                target: idx === 0 ? 0 : Math.max(0, Math.round(section.offsetTop - margin))
+            };
         });
-        cachedSectionMetrics = sections.map(section => ({
-            target: Math.max(0, section.offsetTop - scrollMargin)
-        }));
     };
 
     const syncMobileNavActive = (targetHref) => {
         if (!mobileNavContent) return;
+        const normalizedHref = targetHref === '#top' ? '#about' : targetHref;
         mobileNavContent.querySelectorAll('.nav-expand-link').forEach(link => {
             const href = link.getAttribute('href');
-            const isShq = (targetHref === 'files' || targetHref === '/files' || targetHref === 'files.html') &&
+            const isShq = (normalizedHref === 'files' || normalizedHref === '/files' || normalizedHref === 'files.html') &&
                           (href === 'files' || href === '/files' || href === 'files.html' || href === '#softwarehq');
-            link.classList.toggle('active', href === targetHref || isShq);
+            link.classList.toggle('active', href === normalizedHref || isShq);
         });
     };
 
     const setGliderTo = (targetLink, immediate = false) => {
         if (!targetLink) return;
+        const idx = portfolioLinks.indexOf(targetLink);
+        if (idx >= 0) {
+            lastGliderIdx = idx;
+        }
+
+        const cachedMetric = (glider && navEl && window.innerWidth > 1024)
+            ? (cachedNavMetrics.get(targetLink) || measureNavLink(targetLink))
+            : null;
+        if (cachedMetric && cachedMetric.width > 0) {
+            cachedNavMetrics.set(targetLink, cachedMetric);
+        }
+
         navLinks.forEach(l => l.classList.toggle('active', l === targetLink));
         syncMobileNavActive(targetLink.getAttribute('href'));
 
-        if (!glider || window.innerWidth < 1024) return;
-        let m = cachedNavMetrics.get(targetLink);
-        if (!m || m.width <= 0) {
-            m = { left: targetLink.offsetLeft, width: targetLink.offsetWidth };
-            if (m.width > 0) cachedNavMetrics.set(targetLink, m);
-        }
-        if (!m || m.width <= 0) return;
+        if (!glider || !navEl || window.innerWidth <= 1024 || !cachedMetric || cachedMetric.width <= 0) return;
 
-        if (immediate) {
-            glider.style.transition = 'none';
+        if (
+            gliderInitialized &&
+            lastGliderTarget === targetLink &&
+            Math.abs(cachedMetric.left - lastGliderLeft) < 0.1 &&
+            Math.abs(cachedMetric.width - lastGliderWidth) < 0.1
+        ) {
+            navEl.classList.add('glider-ready');
+            glider.classList.add('visible');
+            return;
         }
-        glider.style.transform = `translate3d(${Math.round(m.left)}px, 0, 0)`;
-        glider.style.width = `${Math.round(m.width)}px`;
+
+        const shouldSnap = immediate || !gliderInitialized;
+        lastGliderLeft = cachedMetric.left;
+        lastGliderWidth = cachedMetric.width;
+        lastGliderTarget = targetLink;
+
+        if (shouldSnap) {
+            navEl.classList.add('glider-instant', 'glider-ready');
+            glider.classList.add('visible');
+            glider.style.transform = `translate3d(${cachedMetric.left}px, 0, 0)`;
+            glider.style.width = `${cachedMetric.width}px`;
+            gliderInitialized = true;
+            void glider.offsetWidth;
+            navEl.classList.remove('glider-instant');
+            return;
+        }
+
+        navEl.classList.add('glider-ready');
         glider.classList.add('visible');
-
-        if (immediate) {
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    if (glider) glider.style.transition = '';
-                });
-            });
-        }
+        glider.style.transform = `translate3d(${cachedMetric.left}px, 0, 0)`;
+        glider.style.width = `${cachedMetric.width}px`;
+        gliderInitialized = true;
     };
 
-    syncActiveGlider = () => {
+    syncActiveGlider = (immediate = false) => {
         if (isSoftwareHqActive && softwareHqLink) {
-            setGliderTo(softwareHqLink, false);
+            setGliderTo(softwareHqLink, immediate);
         } else {
             const activeLink = document.querySelector('.nav a.active') || portfolioLinks[0];
-            setGliderTo(activeLink, false);
+            setGliderTo(activeLink, immediate);
         }
     };
 
-    updateGliderSync = (force = false) => {
-        if (!glider || window.innerWidth < 1024) return;
+    updateGliderSync = (force = false, immediate = false) => {
         if (isSoftwareHqActive || isNavigating) return;
 
         const sy = state ? state.scrollY : (window.scrollY || window.pageYOffset || 0);
@@ -869,13 +979,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let activeIdx = 0;
         const bodyHeight = (document.body && document.body.offsetHeight) || document.documentElement.scrollHeight || 0;
-        const isAtBottom = (window.innerHeight + sy) >= bodyHeight - 80;
+        const isAtBottom = (window.innerHeight + sy) >= bodyHeight - 48;
 
         if (isAtBottom) {
             activeIdx = sMetrics.length - 1;
         } else {
             for (let i = sMetrics.length - 1; i >= 0; i--) {
-                if (sy >= sMetrics[i].target - 20) {
+                if (sy >= sMetrics[i].target - 64) {
                     activeIdx = i;
                     break;
                 }
@@ -887,12 +997,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const targetLink = portfolioLinks[activeIdx];
         if (targetLink) {
-            setGliderTo(targetLink, false);
+            setGliderTo(targetLink, immediate);
+        }
+    };
+
+    syncMobileDrawerState = () => {
+        if (isSoftwareHqActive) {
+            if (softwareHqLink) {
+                syncMobileNavActive(softwareHqLink.getAttribute('href'));
+            }
+            return;
+        }
+        state.scrollY = window.scrollY || window.pageYOffset || 0;
+        if (!isNavigating) {
+            updateGliderSync(true, true);
         }
     };
 
     const initGliderTarget = () => {
-        if (!glider || window.innerWidth < 1024) return;
         refreshMetrics();
 
         if (isSoftwareHqActive && softwareHqLink) {
@@ -906,9 +1028,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const found = portfolioLinks.find(l => l.getAttribute('href') === currentHash);
             if (found) {
                 activeLink = found;
+                const foundIdx = portfolioLinks.indexOf(found);
                 const targetSec = document.querySelector(currentHash);
                 if (targetSec) {
-                    const targetScroll = Math.max(0, targetSec.offsetTop - 72);
+                    const targetScroll = foundIdx === 0 ? 0 : Math.max(0, Math.round(targetSec.offsetTop - getNavScrollMargin(targetSec)));
                     window.scrollTo({ top: targetScroll, behavior: 'instant' });
                     state.scrollY = targetScroll;
                     state.lastScrollY = targetScroll;
@@ -916,9 +1039,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else {
             const currentScroll = window.scrollY || window.pageYOffset || 0;
-            if (cachedSectionMetrics.length) {
+            const bodyHeight = (document.body && document.body.offsetHeight) || document.documentElement.scrollHeight || 0;
+            if ((window.innerHeight + currentScroll) >= bodyHeight - 48 && portfolioLinks.length) {
+                activeLink = portfolioLinks[portfolioLinks.length - 1];
+            } else if (cachedSectionMetrics.length) {
                 for (let i = cachedSectionMetrics.length - 1; i >= 0; i--) {
-                    if (currentScroll >= cachedSectionMetrics[i].target - 20) {
+                    if (currentScroll >= cachedSectionMetrics[i].target - 64) {
                         activeLink = portfolioLinks[i] || activeLink;
                         break;
                     }
@@ -929,26 +1055,24 @@ document.addEventListener('DOMContentLoaded', () => {
         setGliderTo(activeLink, true);
     };
 
-    const showSoftwareHqView = (updateHistory = true) => {
+    const showSoftwareHqView = (updateHistory = true, immediateInit = false) => {
         if (!softwareHqView) return;
         isSoftwareHqActive = true;
-        isNavigating = true;
+        lastGliderIdx = -1;
 
-        // 1. Instantly move glider to Software HQ with pure 0.22s cubic-bezier glide
+        // 1. Commit glider animation cleanly on Frame 0 before toggling heavy view containers
         if (softwareHqLink) {
-            setGliderTo(softwareHqLink, false);
+            setGliderTo(softwareHqLink, immediateInit);
         }
 
-        // 2. Seamless view transition with GPU microfade
-        if (portfolioView) {
-            portfolioView.classList.remove('spa-view-active', 'spa-view-fading-in');
-            portfolioView.classList.add('spa-view-hidden');
+        if (!immediateInit) {
+            beginNavScrollLock(-1, 0);
+        } else {
+            clearNavScrollLock();
+            isNavigating = false;
         }
-        softwareHqView.classList.remove('spa-view-hidden');
-        softwareHqView.classList.add('spa-view-active', 'spa-view-fading-in');
-        setTimeout(() => softwareHqView.classList.remove('spa-view-fading-in'), 230);
 
-        // 3. Document Title
+        // 2. Document Title & Canonical
         const isBn = root.getAttribute('data-lang') === 'bn' || root.getAttribute('lang') === 'bn';
         document.title = isBn
             ? "সফটওয়্যার HQ | হুমায়ূন কবির (Humayun Kabir) ভান্ডার"
@@ -956,56 +1080,72 @@ document.addEventListener('DOMContentLoaded', () => {
         const canonEl = document.querySelector('link[rel="canonical"]');
         if (canonEl) canonEl.setAttribute('href', 'https://humayounkobir.vercel.app/files');
 
-        // 4. Update History State
+        // 3. History State
         if (updateHistory) {
             history.pushState({ view: 'softwarehq' }, '', 'files');
         }
 
-        // 5. Scroll cleanly to top (instant)
-        window.scrollTo({ top: 0, behavior: 'instant' });
-        state.scrollY = 0;
-        state.lastScrollY = 0;
+        const commitViewSwap = () => {
+            if (!isSoftwareHqActive) return;
+            if (portfolioView) {
+                portfolioView.classList.remove('spa-view-active', 'spa-view-fading-in');
+                portfolioView.classList.add('spa-view-hidden');
+            }
+            softwareHqView.classList.remove('spa-view-hidden');
+            softwareHqView.classList.add('spa-view-active');
+            if (!immediateInit) {
+                softwareHqView.classList.add('spa-view-fading-in');
+                setTimeout(() => softwareHqView.classList.remove('spa-view-fading-in'), 220);
+            }
 
-        // 6. Non-blocking ensure explorer cards are rendered
-        if (typeof window.renderSoftwareHqExplorer === 'function') {
-            window.renderSoftwareHqExplorer(false);
+            window.scrollTo({ top: 0, behavior: 'instant' });
+            state.scrollY = 0;
+            state.lastScrollY = 0;
+
+            if (typeof window.renderSoftwareHqExplorer === 'function') {
+                window.renderSoftwareHqExplorer(false);
+            }
+
+            if (!immediateInit) {
+                beginNavScrollLock(-1, 0);
+            }
+        };
+
+        if (immediateInit) {
+            commitViewSwap();
+        } else {
+            requestAnimationFrame(commitViewSwap);
         }
-
-        setTimeout(() => {
-            isNavigating = false;
-        }, 300);
     };
 
-    const showPortfolioView = (targetHash = '#about', updateHistory = true) => {
+    const showPortfolioView = (targetHash = '#about', updateHistory = true, immediateInit = false) => {
         if (!portfolioView) return;
         isSoftwareHqActive = false;
-        isNavigating = true;
 
         const validHash = targetHash && targetHash !== '#top' ? targetHash : '#about';
         const targetLink = document.querySelector(`.nav a[href="${validHash}"]`) || portfolioLinks[0];
+        const targetIdx = portfolioLinks.indexOf(targetLink);
 
-        // 1. Instantly glide pill directly to the destination tab (no intermediate jumping)
+        // 1. Glide pill directly to the destination tab cleanly on Frame 0
         if (targetLink) {
-            setGliderTo(targetLink, false);
+            setGliderTo(targetLink, immediateInit);
         }
 
-        // 2. Seamless view transition with GPU microfade
+        if (!immediateInit) {
+            beginNavScrollLock(targetIdx >= 0 ? targetIdx : 0, null);
+        } else {
+            clearNavScrollLock();
+            isNavigating = false;
+        }
+
         if (typeof window.hideDetail === 'function') {
             const dv = document.getElementById('detailView');
             if (dv && dv.classList.contains('active')) {
                 window.hideDetail(true);
             }
         }
-        if (softwareHqView) {
-            softwareHqView.classList.remove('spa-view-active', 'spa-view-fading-in');
-            softwareHqView.classList.add('spa-view-hidden');
-        }
-        portfolioView.classList.remove('spa-view-hidden');
-        portfolioView.classList.add('spa-view-active', 'spa-view-fading-in');
-        portfolioView.querySelectorAll('.reveal').forEach(el => el.classList.add('active'));
-        setTimeout(() => portfolioView.classList.remove('spa-view-fading-in'), 230);
 
-        // 3. Document Title
+        // 2. Document Title & Canonical
         const isBn = root.getAttribute('data-lang') === 'bn' || root.getAttribute('lang') === 'bn';
         document.title = isBn
             ? "হুমায়ূন কবির | ডিপ্লোমা ইঞ্জিনিয়ার ও ডিজাইনার পোর্টফোলিও"
@@ -1013,33 +1153,54 @@ document.addEventListener('DOMContentLoaded', () => {
         const canonEl = document.querySelector('link[rel="canonical"]');
         if (canonEl) canonEl.setAttribute('href', 'https://humayounkobir.vercel.app/');
 
-        // 4. Update History State
+        // 3. History State
         if (updateHistory) {
             const cleanHash = targetHash && targetHash !== '#top' ? targetHash : '';
             const newUrl = cleanHash ? ('/' + cleanHash) : '/';
             history.pushState({ view: 'portfolio', hash: targetHash }, '', newUrl);
         }
 
-        // 5. Recompute section metrics now that portfolioView is visible
-        refreshMetrics();
-
-        // 6. Smooth scroll to target section
-        if (targetHash === '#top') {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            state.scrollY = 0;
-            state.lastScrollY = 0;
-            setTimeout(() => { isNavigating = false; }, 400);
-        } else {
-            const targetSec = document.querySelector(validHash);
-            if (targetSec) {
-                const targetTop = Math.max(0, targetSec.offsetTop - 72);
-                window.scrollTo({ top: targetTop, behavior: 'smooth' });
-                state.scrollY = targetTop;
-                state.lastScrollY = targetTop;
-                setTimeout(() => { isNavigating = false; }, 500);
-            } else {
-                isNavigating = false;
+        const commitViewSwap = () => {
+            if (isSoftwareHqActive) return;
+            if (softwareHqView) {
+                softwareHqView.classList.remove('spa-view-active', 'spa-view-fading-in');
+                softwareHqView.classList.add('spa-view-hidden');
             }
+            portfolioView.classList.remove('spa-view-hidden');
+            portfolioView.classList.add('spa-view-active');
+            if (!immediateInit) {
+                portfolioView.classList.add('spa-view-fading-in');
+                setTimeout(() => portfolioView.classList.remove('spa-view-fading-in'), 220);
+            }
+            if (!hasHydratedPortfolioReveals) {
+                hasHydratedPortfolioReveals = true;
+                portfolioView.querySelectorAll('.reveal').forEach(el => el.classList.add('active'));
+            }
+
+            computePositions();
+            refreshMetrics();
+
+            let targetTop = 0;
+            if (targetHash !== '#top') {
+                const targetSec = document.querySelector(validHash);
+                if (targetSec) {
+                    targetTop = targetIdx === 0 ? 0 : Math.max(0, Math.round(targetSec.offsetTop - getNavScrollMargin(targetSec)));
+                }
+            }
+
+            window.scrollTo({ top: targetTop, behavior: immediateInit ? 'instant' : 'smooth' });
+            state.scrollY = targetTop;
+            state.lastScrollY = targetTop;
+
+            if (!immediateInit) {
+                beginNavScrollLock(targetIdx >= 0 ? targetIdx : 0, targetTop);
+            }
+        };
+
+        if (immediateInit) {
+            commitViewSwap();
+        } else {
+            requestAnimationFrame(commitViewSwap);
         }
     };
 
@@ -1049,9 +1210,9 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             if (!isSoftwareHqActive) {
                 showSoftwareHqView(true);
-            } else if (typeof window.hideDetail === 'function') {
+            } else {
                 const dv = document.getElementById('detailView');
-                if (dv && dv.classList.contains('active')) {
+                if (dv && dv.classList.contains('active') && typeof window.hideDetail === 'function') {
                     window.hideDetail();
                 } else {
                     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1060,31 +1221,51 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Mobile Software HQ Link Click
-    if (mobileSoftwareHqLink) {
-        mobileSoftwareHqLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            closeMenu();
-            if (!isSoftwareHqActive) {
-                showSoftwareHqView(true);
-            }
-        });
-    }
-
     // Portfolio Navigation Links (About, Skills, Projects, Contact)
-    portfolioLinks.forEach(link => {
+    portfolioLinks.forEach((link, idx) => {
         link.addEventListener('click', (e) => {
             const targetHash = link.getAttribute('href');
             if (isSoftwareHqActive) {
                 e.preventDefault();
                 showPortfolioView(targetHash, true);
             } else {
-                isNavigating = true;
+                const targetSec = document.querySelector(targetHash);
+                const targetTop = (idx === 0 || !targetSec)
+                    ? 0
+                    : Math.max(0, Math.round(targetSec.offsetTop - getNavScrollMargin(targetSec)));
                 setGliderTo(link, false);
-                setTimeout(() => { isNavigating = false; }, 500);
+                beginNavScrollLock(idx, targetTop);
             }
         });
     });
+
+    // In-page CTA & Footer Anchor Sync (Hero Skills/Projects/Connect, Back to top, Social Software HQ)
+    if (portfolioView) {
+        portfolioView.querySelectorAll('a[href^="#"]').forEach(link => {
+            link.addEventListener('click', () => {
+                if (isSoftwareHqActive) return;
+                const targetHash = link.getAttribute('href');
+                const normalizedHash = targetHash === '#top' ? '#about' : targetHash;
+                const matchLink = document.querySelector(`.nav a[href="${normalizedHash}"]`) || portfolioLinks[0];
+                const matchIdx = portfolioLinks.indexOf(matchLink);
+                const targetSec = targetHash === '#top' ? null : document.querySelector(targetHash);
+                const targetTop = (targetHash === '#top' || matchIdx === 0 || !targetSec)
+                    ? 0
+                    : Math.max(0, Math.round(targetSec.offsetTop - getNavScrollMargin(targetSec)));
+                if (matchLink) {
+                    setGliderTo(matchLink, false);
+                }
+                beginNavScrollLock(matchIdx >= 0 ? matchIdx : 0, targetTop);
+            });
+        });
+
+        portfolioView.querySelectorAll('a[href="files"], a[href="/files"], a[href="files.html"]').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                showSoftwareHqView(true);
+            });
+        });
+    }
 
     // Mobile Expand Navigation Links
     if (mobileNavContent) {
@@ -1094,14 +1275,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (href === 'files' || href === 'files.html' || href === '/files' || href === '#softwarehq') {
                     e.preventDefault();
                     closeMenu();
-                    showSoftwareHqView(true);
+                    if (!isSoftwareHqActive) {
+                        showSoftwareHqView(true);
+                    } else {
+                        const dv = document.getElementById('detailView');
+                        if (dv && dv.classList.contains('active') && typeof window.hideDetail === 'function') {
+                            window.hideDetail();
+                        } else {
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }
+                    }
                 } else if (href && href.startsWith('#')) {
+                    const matchLink = document.querySelector(`.nav a[href="${href}"]`) || portfolioLinks[0];
+                    const matchIdx = portfolioLinks.indexOf(matchLink);
                     if (isSoftwareHqActive) {
                         e.preventDefault();
                         closeMenu();
                         showPortfolioView(href, true);
                     } else {
                         closeMenu();
+                        if (matchLink) setGliderTo(matchLink, true);
+                        const targetSec = document.querySelector(href);
+                        const targetTop = (matchIdx === 0 || !targetSec)
+                            ? 0
+                            : Math.max(0, Math.round(targetSec.offsetTop - getNavScrollMargin(targetSec)));
+                        beginNavScrollLock(matchIdx >= 0 ? matchIdx : 0, targetTop);
                     }
                 }
             });
@@ -1115,55 +1313,77 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isSoftwareHqActive) {
                 e.preventDefault();
                 showPortfolioView('#top', true);
+            } else if (portfolioLinks[0]) {
+                setGliderTo(portfolioLinks[0], false);
+                beginNavScrollLock(0, 0);
             }
         });
     }
 
     // History Popstate Navigation (Seamless Back/Forward)
     window.addEventListener('popstate', (e) => {
-        const isFilesUrl = window.location.pathname.endsWith('files.html') || 
-                           window.location.pathname.endsWith('/files') || 
-                           window.location.pathname === '/files' || 
+        const isFilesUrl = window.location.pathname.endsWith('files.html') ||
+                           window.location.pathname.endsWith('/files') ||
+                           window.location.pathname === '/files' ||
                            (e.state && e.state.view === 'softwarehq');
         if (isFilesUrl) {
-            showSoftwareHqView(false);
+            showSoftwareHqView(false, true);
         } else {
             const targetHash = (e.state && e.state.hash) || window.location.hash || '#about';
-            showPortfolioView(targetHash, false);
+            showPortfolioView(targetHash, false, true);
         }
     });
 
     // Initial Route Check (If landing directly on Software HQ view)
-    const initialIsFiles = window.location.pathname.endsWith('files.html') || 
-                           window.location.pathname.endsWith('/files') || 
-                           window.location.pathname === '/files' || 
-                           window.location.search.includes('view=files') || 
+    const initialIsFiles = window.location.pathname.endsWith('files.html') ||
+                           window.location.pathname.endsWith('/files') ||
+                           window.location.pathname === '/files' ||
+                           window.location.search.includes('view=files') ||
                            window.location.hash === '#softwarehq';
     if (initialIsFiles) {
-        showSoftwareHqView(false);
+        showSoftwareHqView(false, true);
     }
 
-    // Apply saved or initial language
-    applyLanguage(activeLang);
+    // Apply saved or initial language (skip glider animation until single deterministic init below)
+    applyLanguage(activeLang, true, true);
 
-    // Initialize metrics and glider immediately
+    // Initialize metrics and snap glider immediately with zero startup fly-in
     computePositions();
     initGliderTarget();
-    if (window.innerWidth >= 1024) startLoop();
+    if (window.innerWidth > 1024) startLoop();
 
-    if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(() => {
-            computePositions();
-            refreshMetrics();
-            syncActiveGlider();
-            updateGliderSync();
-        });
-    }
-    window.addEventListener('load', () => {
+    const resyncGliderGeometry = () => {
         computePositions();
         refreshMetrics();
-        syncActiveGlider();
-        updateGliderSync();
+        if (window.innerWidth > 1024) {
+            syncActiveGlider(true);
+        }
+    };
+
+    if (typeof ResizeObserver !== 'undefined' && navEl) {
+        const navResizeObserver = new ResizeObserver(() => {
+            refreshMetrics();
+            if (window.innerWidth > 1024) {
+                syncActiveGlider(true);
+            }
+        });
+        navResizeObserver.observe(navEl);
+        navLinks.forEach(link => navResizeObserver.observe(link));
+    }
+
+    if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(resyncGliderGeometry);
+    }
+    window.addEventListener('load', resyncGliderGeometry);
+    window.addEventListener('loader:done', resyncGliderGeometry, { once: true });
+    window.addEventListener('pageshow', (event) => {
+        if (event.persisted) {
+            resyncGliderGeometry();
+            if (!isSoftwareHqActive && !isNavigating) {
+                state.scrollY = window.scrollY || window.pageYOffset || 0;
+                updateGliderSync(true, true);
+            }
+        }
     });
 
     // =========================================================================
@@ -1756,15 +1976,15 @@ document.addEventListener('DOMContentLoaded', () => {
         requestIdleCallback(() => {
             computePositions();
             refreshMetrics();
-            updateGliderSync();
-            if (window.innerWidth >= 1024) startLoop();
+            if (!isNavigating) updateGliderSync(false, document.readyState !== 'complete');
+            if (window.innerWidth > 1024) startLoop();
         });
     } else {
         setTimeout(() => {
             computePositions();
             refreshMetrics();
-            updateGliderSync();
-            if (window.innerWidth >= 1024) startLoop();
+            if (!isNavigating) updateGliderSync(false, document.readyState !== 'complete');
+            if (window.innerWidth > 1024) startLoop();
         }, 100);
     }
 });
@@ -1939,7 +2159,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (pm) {
                     pm.classList.remove('page-exit-left', 'page-exit-right', 'page-slide-in-left', 'page-slide-in-right');
                 }
-                if (typeof updateGliderSync === 'function') updateGliderSync(true);
             }
         });
     })();

@@ -17,17 +17,15 @@
         }
 
         .spa-view.spa-view-fading-in {
-            animation: spaViewFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation: spaViewFadeIn 0.2s ease-out forwards;
         }
 
         @keyframes spaViewFadeIn {
             0% {
                 opacity: 0;
-                transform: translate3d(0, 8px, 0);
             }
             100% {
                 opacity: 1;
-                transform: translate3d(0, 0, 0);
             }
         }
 
@@ -280,7 +278,7 @@
             cursor: pointer;
             position: relative;
             z-index: 1;
-            backdrop-filter: blur(10px);
+            contain: layout style;
         }
 
         .file-card:hover {
