@@ -1639,12 +1639,79 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let isMenuOpen = false;
+        let menuTouchOriginY = 0;
+        let menuTouchLastY = 0;
+
+        const onMenuTouchStart = (e) => {
+            if (e.touches && e.touches.length === 1) {
+                menuTouchOriginY = e.touches[0].clientY;
+                menuTouchLastY = menuTouchOriginY;
+            }
+        };
+
+        const onMenuTouchMove = (e) => {
+            if (!isMenuOpen) return;
+            const inDrawer = mobileNavContent && mobileNavContent.contains(e.target);
+            const touch = e.touches && e.touches[0];
+            if (!inDrawer) {
+                if (e.cancelable) e.preventDefault();
+                return;
+            }
+            if (!touch) return;
+            const currentY = touch.clientY;
+            const totalDelta = Math.abs(currentY - menuTouchOriginY);
+            const dy = currentY - menuTouchLastY;
+            menuTouchLastY = currentY;
+            if (totalDelta < 6) return;
+
+            const maxScroll = mobileNavContent.scrollHeight - mobileNavContent.clientHeight;
+            if (maxScroll <= 1) {
+                if (e.cancelable) e.preventDefault();
+                return;
+            }
+            const atTop = mobileNavContent.scrollTop <= 0 && dy > 0;
+            const atBottom = (mobileNavContent.scrollTop + mobileNavContent.clientHeight) >= (mobileNavContent.scrollHeight - 1) && dy < 0;
+            if ((atTop || atBottom) && e.cancelable) {
+                e.preventDefault();
+            }
+        };
+
+        const onMenuWheel = (e) => {
+            if (!isMenuOpen) return;
+            const inDrawer = mobileNavContent && mobileNavContent.contains(e.target);
+            if (!inDrawer) {
+                if (e.cancelable) e.preventDefault();
+                return;
+            }
+            const maxScroll = mobileNavContent.scrollHeight - mobileNavContent.clientHeight;
+            if (maxScroll <= 1) {
+                if (e.cancelable) e.preventDefault();
+                return;
+            }
+            const atTop = mobileNavContent.scrollTop <= 0 && e.deltaY < 0;
+            const atBottom = (mobileNavContent.scrollTop + mobileNavContent.clientHeight) >= (mobileNavContent.scrollHeight - 1) && e.deltaY > 0;
+            if ((atTop || atBottom) && e.cancelable) {
+                e.preventDefault();
+            }
+        };
+
+        const lockBackgroundScroll = () => {
+            window.addEventListener('touchstart', onMenuTouchStart, { passive: true });
+            window.addEventListener('touchmove', onMenuTouchMove, { passive: false });
+            window.addEventListener('wheel', onMenuWheel, { passive: false });
+        };
+
+        const unlockBackgroundScroll = () => {
+            window.removeEventListener('touchstart', onMenuTouchStart);
+            window.removeEventListener('touchmove', onMenuTouchMove);
+            window.removeEventListener('wheel', onMenuWheel);
+        };
 
         const openMenu = () => {
             if (isMenuOpen || !navWrap) return;
             isMenuOpen = true;
             navWrap.classList.add('menu-open');
-            root.classList.add('mobile-menu-open');
+            lockBackgroundScroll();
 
             if (mobileMenuBtn) {
                 mobileMenuBtn.classList.add('active');
@@ -1657,7 +1724,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!isMenuOpen || !navWrap) return;
             isMenuOpen = false;
             navWrap.classList.remove('menu-open');
-            root.classList.remove('mobile-menu-open');
+            unlockBackgroundScroll();
 
             if (mobileMenuBtn) {
                 mobileMenuBtn.classList.remove('active');
