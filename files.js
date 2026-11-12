@@ -1575,6 +1575,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        const themeMeta = document.querySelector('meta[name="theme-color"]');
+
         const updateThemeToggleUi = (theme) => {
             const isDark = theme === 'dark';
             [themeToggle, themeToggleMobile].forEach(t => {
@@ -1584,12 +1586,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 t.setAttribute('aria-label', isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode');
                 t.setAttribute('title', isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode');
             });
+            if (themeMeta) {
+                themeMeta.setAttribute('content', isDark ? '#0b0b0b' : '#ffffff');
+            }
         };
 
-        const applyTheme = (theme) => {
+        let themeSwitchToken = 0;
+
+        const applyTheme = (theme, isInteractive = false) => {
+            const token = ++themeSwitchToken;
+
+            if (isInteractive) {
+                root.classList.add('theme-switching');
+            }
+
             root.setAttribute('data-theme', theme);
-            localStorage.setItem('portfolio-theme', theme);
             updateThemeToggleUi(theme);
+
+            if (isInteractive) {
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        if (token === themeSwitchToken) {
+                            root.classList.remove('theme-switching');
+                        }
+                    });
+                });
+                setTimeout(() => {
+                    try {
+                        localStorage.setItem('portfolio-theme', theme);
+                    } catch (e) {}
+                }, 0);
+            }
         };
 
         [themeToggle, themeToggleMobile].forEach(btn => {
@@ -1597,7 +1624,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
                     const newTheme = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-                    applyTheme(newTheme);
+                    applyTheme(newTheme, true);
                 });
             }
         });
@@ -1606,39 +1633,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const navWrap = document.getElementById('navWrap');
         const mobileNavContent = document.getElementById('mobileNavContent');
 
+        const shqMobileLink = document.getElementById('mobileNavSoftwareHq');
+        if (shqMobileLink) {
+            shqMobileLink.classList.add('active');
+        }
+
         let isMenuOpen = false;
 
         const openMenu = () => {
             if (isMenuOpen || !navWrap) return;
             isMenuOpen = true;
             navWrap.classList.add('menu-open');
+            root.classList.add('mobile-menu-open');
 
             if (mobileMenuBtn) {
                 mobileMenuBtn.classList.add('active');
                 mobileMenuBtn.setAttribute('aria-expanded', 'true');
                 mobileMenuBtn.setAttribute('aria-label', 'Close Navigation Menu');
             }
-
-            const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-            if (scrollbarWidth > 0) {
-                document.body.style.paddingRight = `${scrollbarWidth}px`;
-            }
-            document.body.style.overflow = 'hidden';
         };
 
         const closeMenu = () => {
             if (!isMenuOpen || !navWrap) return;
             isMenuOpen = false;
             navWrap.classList.remove('menu-open');
+            root.classList.remove('mobile-menu-open');
 
             if (mobileMenuBtn) {
                 mobileMenuBtn.classList.remove('active');
                 mobileMenuBtn.setAttribute('aria-expanded', 'false');
                 mobileMenuBtn.setAttribute('aria-label', 'Open Navigation Menu');
             }
-
-            document.body.style.overflow = '';
-            document.body.style.paddingRight = '';
         };
 
         const toggleMenu = () => {
@@ -1684,8 +1709,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }, { passive: true });
 
-        const savedTheme = localStorage.getItem('portfolio-theme') || 'light';
-        applyTheme(savedTheme);
+        const savedTheme = localStorage.getItem('portfolio-theme') || root.getAttribute('data-theme') || 'light';
+        applyTheme(savedTheme, false);
     }
 
     const initialLang = root.getAttribute('data-lang') || localStorage.getItem('portfolio-lang') || 'en';

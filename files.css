@@ -109,7 +109,6 @@
             display: flex;
             align-items: center;
             gap: 0.75rem;
-            backdrop-filter: blur(10px);
             border: 0;
         }
 
@@ -426,7 +425,6 @@
             background: var(--surface);
             border: 1px solid var(--line);
             border-radius: 2.5rem;
-            backdrop-filter: blur(10px);
             box-shadow: var(--shadow2);
             text-align: center;
         }
@@ -951,7 +949,6 @@
             border: 1px solid var(--line);
             border-radius: 2.5rem;
             padding: 3rem;
-            backdrop-filter: blur(10px);
             box-shadow: var(--shadow);
         }
 
@@ -1072,7 +1069,6 @@
             font-family: inherit;
             font-size: 1rem;
             font-weight: 600;
-            backdrop-filter: blur(10px);
             transition: all 0.4s var(--bezier);
             box-shadow: var(--shadow);
         }
@@ -1179,6 +1175,53 @@
 
             .detail-hero-column {
                 position: static;
+            }
+
+            .category-dropdown-menu,
+            .adobe-ps,
+            .adobe-ai,
+            .adobe-pr,
+            .adobe-ae,
+            .copy-toast {
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+            }
+
+            .pill,
+            .dropdown-btn .chevron-icon,
+            .dropdown-item,
+            .dropdown-item i,
+            .file-card,
+            .file-icon,
+            .back-btn,
+            .download-hero,
+            .btn-secondary-soft,
+            .doc-key-copy-btn,
+            .adobe-ps,
+            .adobe-ai,
+            .adobe-pr,
+            .adobe-ae,
+            .adobe-ps i,
+            .adobe-ai i,
+            .adobe-pr i,
+            .adobe-ae i,
+            .code-copy-btn,
+            .copy-btn-small,
+            .doc-preview-wrapper,
+            .pre-copy-btn,
+            .search-box i,
+            .search-box input {
+                transition: none !important;
+            }
+
+            .file-card:hover {
+                transform: none;
+                box-shadow: none;
+                z-index: 1;
+            }
+
+            .file-card:hover .file-icon {
+                transform: none;
             }
         }
 

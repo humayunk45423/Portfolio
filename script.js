@@ -391,15 +391,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const applyTheme = (theme) => {
+    let themeSwitchToken = 0;
+
+    const applyTheme = (theme, isInteractive = false) => {
+        const token = ++themeSwitchToken;
+
+        if (isInteractive) {
+            root.classList.add('theme-switching');
+        }
+
         root.setAttribute('data-theme', theme);
-        localStorage.setItem('portfolio-theme', theme);
         updateThemeToggleUi(theme);
+
+        if (isInteractive) {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    if (token === themeSwitchToken) {
+                        root.classList.remove('theme-switching');
+                    }
+                });
+            });
+            setTimeout(() => {
+                try {
+                    localStorage.setItem('portfolio-theme', theme);
+                } catch (e) {}
+            }, 0);
+        }
     };
 
     const setTheme = (theme) => {
-        if (root.getAttribute('data-theme') === theme && localStorage.getItem('portfolio-theme') === theme) return;
-        applyTheme(theme);
+        if (root.getAttribute('data-theme') === theme) return;
+        applyTheme(theme, true);
     };
 
     [themeToggle, themeToggleMobile].forEach(btn => {
@@ -412,8 +434,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    const savedTheme = localStorage.getItem('portfolio-theme') || 'light';
-    applyTheme(savedTheme);
+    const savedTheme = localStorage.getItem('portfolio-theme') || root.getAttribute('data-theme') || 'light';
+    applyTheme(savedTheme, false);
 
     // =========================================================================
     // 2. Bilingual Language Management (EN / BN - Segmented Slider)
@@ -543,33 +565,26 @@ document.addEventListener('DOMContentLoaded', () => {
         syncMobileDrawerState();
         isMenuOpen = true;
         navWrap.classList.add('menu-open');
+        root.classList.add('mobile-menu-open');
 
         if (mobileMenuBtn) {
             mobileMenuBtn.classList.add('active');
             mobileMenuBtn.setAttribute('aria-expanded', 'true');
             mobileMenuBtn.setAttribute('aria-label', 'Close Navigation Menu');
         }
-
-        const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-        if (scrollbarWidth > 0) {
-            document.body.style.paddingRight = `${scrollbarWidth}px`;
-        }
-        document.body.style.overflow = 'hidden';
     };
 
     const closeMenu = () => {
         if (!isMenuOpen || !navWrap) return;
         isMenuOpen = false;
         navWrap.classList.remove('menu-open');
+        root.classList.remove('mobile-menu-open');
 
         if (mobileMenuBtn) {
             mobileMenuBtn.classList.remove('active');
             mobileMenuBtn.setAttribute('aria-expanded', 'false');
             mobileMenuBtn.setAttribute('aria-label', 'Open Navigation Menu');
         }
-
-        document.body.style.overflow = '';
-        document.body.style.paddingRight = '';
     };
 
     const toggleMenu = () => {
