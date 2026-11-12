@@ -1298,27 +1298,32 @@ function safeAssetUrl(url) {
     }
 }
 
-function hideDetail(isFromPopstate = false) {
+function hideDetail(isFromPopstate = false, skipScrollRestore = false) {
     currentDetailId = null;
     mainLayout.classList.remove('detail-mode');
     detailView.classList.remove('active');
     explorerView.classList.add('active');
 
-    let targetPos = explorerScrollPos;
-    try {
-        const saved = sessionStorage.getItem('explorerScrollPos');
-        if (saved !== null) {
-            targetPos = parseInt(saved, 10) || targetPos;
-        }
-    } catch (e) {}
+    if (!skipScrollRestore) {
+        let targetPos = explorerScrollPos;
+        try {
+            const saved = sessionStorage.getItem('explorerScrollPos');
+            if (saved !== null) {
+                targetPos = parseInt(saved, 10) || targetPos;
+            }
+        } catch (e) {}
 
-    window.scrollTo({ top: targetPos, behavior: 'instant' });
-    requestAnimationFrame(() => {
         window.scrollTo({ top: targetPos, behavior: 'instant' });
-    });
-    setTimeout(() => {
-        window.scrollTo({ top: targetPos, behavior: 'instant' });
-    }, 40);
+        requestAnimationFrame(() => {
+            window.scrollTo({ top: targetPos, behavior: 'instant' });
+        });
+        setTimeout(() => {
+            const shqView = document.getElementById('softwareHqView');
+            if (!currentDetailId && (!shqView || !shqView.classList.contains('spa-view-hidden'))) {
+                window.scrollTo({ top: targetPos, behavior: 'instant' });
+            }
+        }, 40);
+    }
 
     if (!isFromPopstate) {
         history.pushState({ view: 'explorer' }, '', window.location.pathname);
@@ -1654,6 +1659,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const inDrawer = mobileNavContent && mobileNavContent.contains(e.target);
             const touch = e.touches && e.touches[0];
             if (!inDrawer) {
+                if (mobileMenuBtn && mobileMenuBtn.contains(e.target)) {
+                    if (!touch || Math.abs(touch.clientY - menuTouchOriginY) < 6) return;
+                }
                 if (e.cancelable) e.preventDefault();
                 return;
             }

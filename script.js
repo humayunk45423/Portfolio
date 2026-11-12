@@ -574,6 +574,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const inDrawer = mobileNavContent && mobileNavContent.contains(e.target);
         const touch = e.touches && e.touches[0];
         if (!inDrawer) {
+            if (mobileMenuBtn && mobileMenuBtn.contains(e.target)) {
+                if (!touch || Math.abs(touch.clientY - menuTouchOriginY) < 6) return;
+            }
             if (e.cancelable) e.preventDefault();
             return;
         }
@@ -1223,7 +1226,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof window.hideDetail === 'function') {
             const dv = document.getElementById('detailView');
             if (dv && dv.classList.contains('active')) {
-                window.hideDetail(true);
+                window.hideDetail(true, true);
             }
         }
 
